@@ -121,15 +121,15 @@ class Alist2Strm:
                     local_path_stat = local_path.stat()
                     if local_path_stat.st_mtime < path.modified_timestamp:
                         logger.debug(
-                            f"文件 {local_path.name} 已过期，需要重新处理 {full_path}"
+                            f"文件 {local_path} 已过期，需要重新处理 {full_path}"
                         )
                         return True
                     if local_path_stat.st_size < path.size:
                         logger.debug(
-                            f"文件 {local_path.name} 大小不一致，可能是本地文件损坏，需要重新处理 {full_path}"
+                            f"文件 {local_path} 大小不一致，可能是本地文件损坏，需要重新处理 {full_path}"
                         )
                         return True
-                logger.debug(f"文件 {local_path.name} 已存在，跳过处理 {full_path}")
+                logger.debug(f"文件 {local_path} 已存在，跳过处理 {full_path}")
                 return False
             return True
 
@@ -241,5 +241,6 @@ class Alist2Strm:
                         parent_dir = parent_dir.parent
             except Exception as e:
                 logger.error(f"删除文件 {file_path} 失败：{e}")
+
 
 
