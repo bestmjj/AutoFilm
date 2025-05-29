@@ -25,6 +25,7 @@ class Alist2Strm:
         image: bool = False,
         nfo: bool = False,
         mode: str = "AlistURL",
+        full_path: str = "/",
         overwrite: bool = False,
         other_ext: str = "",
         max_workers: int = 50,
@@ -102,6 +103,7 @@ class Alist2Strm:
             :param path: AlistPath 对象
             :param full_path: 完整路径
             """
+            
             if path.is_dir:
                 return False
             if path.suffix.lower() not in self.process_file_exts:
@@ -112,6 +114,7 @@ class Alist2Strm:
             except OSError as e:  # 可能是文件名过长
                 logger.warning(f"获取 {full_path} 本地路径失败：{e}")
                 return False
+            self.full_path = full_path
             self.processed_local_paths.add(local_path)
             if not self.overwrite and local_path.exists():
                 if path.suffix in self.download_exts:
@@ -129,6 +132,7 @@ class Alist2Strm:
                 logger.debug(f"文件 {local_path.name} 已存在，跳过处理 {full_path}")
                 return False
             return True
+
         if self.mode not in ["AlistURL", "RawURL", "AlistPath"]:
             logger.warning(
                 f"Alist2Strm 的模式 {self.mode} 不存在，已设置为默认模式 AlistURL"
@@ -147,6 +151,7 @@ class Alist2Strm:
                 filter=filter,  # 传递修改后的 filter 函数
             ):
                 tg.create_task(self.__file_processer(path))
+                
         if self.sync_server:
             await self.__cleanup_local_files()
             logger.info("清理过期的 .strm 文件完成")
@@ -158,8 +163,7 @@ class Alist2Strm:
 
         :param path: AlistPath 对象
         """
-        local_path = self.__get_local_path(path)
-
+        local_path = self.__get_local_path(path, self.full_path)
         if self.mode == "AlistURL":
             content = path.download_url
         elif self.mode == "RawURL":
@@ -237,4 +241,5 @@ class Alist2Strm:
                         parent_dir = parent_dir.parent
             except Exception as e:
                 logger.error(f"删除文件 {file_path} 失败：{e}")
+
 
