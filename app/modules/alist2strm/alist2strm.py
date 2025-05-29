@@ -179,11 +179,11 @@ class Alist2Strm:
         if local_path.suffix == ".strm":
             async with async_open(local_path, mode="w", encoding="utf-8") as file:
                 await file.write(content)
-            logger.info(f"{local_path.name} 创建成功")
+            logger.info(f"{local_path} 创建成功")
         else:
             async with self.__max_downloaders:
                 await RequestUtils.download(path.download_url, local_path)
-                logger.info(f"{local_path.name} 下载成功")
+                logger.info(f"{local_path} 下载成功")
 
     def __get_local_path(self, path: AlistPath, full_path: str = "") -> Path:
         """
@@ -241,6 +241,7 @@ class Alist2Strm:
                         parent_dir = parent_dir.parent
             except Exception as e:
                 logger.error(f"删除文件 {file_path} 失败：{e}")
+
 
 
 
