@@ -209,9 +209,9 @@ class AlistClient(metaclass=Multiton):
             AlistPath(
                 server_url=self.url,
                 base_path=self.base_path,
-                #full_path=dir_path + "/" + alist_path["name"] if dir_path != "/" else "/" + alist_path["name"],  # 重命名为 full_path
+                file_path=dir_path + "/" + alist_path["name"] if dir_path != "/" else "/" + alist_path["name"],
+                full_path=dir_path + "/" + alist_path["name"] if dir_path != "/" else "/" + alist_path["name"],
                 **alist_path,
-                full_path=dir_path + "/" + alist_path["name"],
             )
             for alist_path in result["data"]["content"]
         ]
@@ -243,7 +243,8 @@ class AlistClient(metaclass=Multiton):
         return AlistPath(
             server_url=self.url,
             base_path=self.base_path,
-            full_path=path,  # 重命名为 full_path
+            file_path=path,
+            full_path=path,
             **result["data"],
         )
 
@@ -399,4 +400,5 @@ class AlistClient(metaclass=Multiton):
             return storage
 
         return None
+
 

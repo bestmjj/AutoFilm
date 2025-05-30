@@ -1,20 +1,16 @@
 from re import sub
 from typing import Any
 from datetime import datetime
-
 from pydantic import BaseModel
-
 from app.utils import URLUtils
-
 
 class AlistPath(BaseModel):
     """
     Alist 文件/目录对象
     """
-
-    _server: str  # 服务器地址
-    _base_path: str  # 基础路径（用于计算文件/目录在 Alist 服务器上的绝对地址）
-    _path: str  # 文件/目录路径
+    server_url: str  # 服务器地址
+    base_path: str  # 基础路径（用于计算文件/目录在 Alist 服务器上的绝对地址）
+    file_path: str  # 文件/目录路径（之前是 _path）
     name: str  # 文件/目录名称
     size: int  # 文件大小
     is_dir: bool  # 是否为目录
@@ -22,7 +18,7 @@ class AlistPath(BaseModel):
     created: str = ""  # 创建时间
     sign: str = ""  # 签名
     thumb: str = ""  # 缩略图
-    type: int = ""  # 类型
+    type: int = 0  # 类型
     hashinfo: str = "null"  # 哈希信息（字符串）
     hash_info: dict | None = None  # 哈希信息（键值对）
     raw_url: str = ""  # 原始地址
@@ -30,13 +26,14 @@ class AlistPath(BaseModel):
     header: str = ""  # 头部信息
     provider: str = ""  # 提供者
     related: Any = None  # 相关信息
+    full_path: str = ""  # 完整路径
 
     @property
     def abs_path(self) -> str:
         """
         文件/目录在 Alist 服务器上的绝对路径
         """
-        return self._base_path.rstrip("/") + self._path
+        return self.base_path.rstrip("/") + self.file_path
 
     @property
     def download_url(self) -> str:
@@ -44,10 +41,9 @@ class AlistPath(BaseModel):
         文件下载地址
         """
         if self.sign:
-            url = self._server + "/d" + self.abs_path + "?sign=" + self.sign
+            url = self.server_url + "/d" + self.abs_path + "?sign=" + self.sign
         else:
-            url = self._server + "/d" + self.abs_path
-
+            url = self.server_url + "/d" + self.abs_path
         return URLUtils.encode(url)
 
     @property
