@@ -14,6 +14,7 @@ from app.modules.alist import AlistClient, AlistPath
 class Alist2Strm:
     def __init__(
         self,
+        id: str = "",
         url: str = "http://localhost:5244",
         username: str = "",
         password: str = "",
@@ -85,6 +86,7 @@ class Alist2Strm:
         self.__max_downloaders = Semaphore(max_downloaders)
         self.wait_time = wait_time
         self.sync_server = sync_server
+        self.id = id
 
         if sync_ignore:
             self.sync_ignore_pattern = re_compile(sync_ignore)
@@ -133,6 +135,7 @@ class Alist2Strm:
                 return False
             return True
 
+        logger.info(f"开始处理 {self.id}")
         if self.mode not in ["AlistURL", "RawURL", "AlistPath"]:
             logger.warning(
                 f"Alist2Strm 的模式 {self.mode} 不存在，已设置为默认模式 AlistURL"
@@ -155,6 +158,7 @@ class Alist2Strm:
         if self.sync_server:
             await self.__cleanup_local_files()
             logger.info("清理过期的 .strm 文件完成")
+        logger.info(f"{self.id} 处理完成")
         logger.info("Alist2Strm 处理完成")
 
     async def __file_processer(self, path: AlistPath) -> None:
@@ -241,6 +245,7 @@ class Alist2Strm:
                         parent_dir = parent_dir.parent
             except Exception as e:
                 logger.error(f"删除文件 {file_path} 失败：{e}")
+
 
 
 
