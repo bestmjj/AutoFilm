@@ -12,7 +12,9 @@ from app.core import settings, logger
 from app.extensions import LOGO
 from app.modules import Alist2Strm, Ani2Alist
 from app.modules.telegram_bot import TelegramBot
+from app.modules.webui import app as web_app
 from datetime import datetime, timedelta
+import uvicorn
 
 
 def print_logo() -> None:
@@ -25,10 +27,31 @@ def print_logo() -> None:
     print("")
 
 
+# Global scheduler instance to be accessible by webui
+scheduler = None
+
+
+async def start_web_server():
+    """
+    启动Web服务器
+    """
+    config = uvicorn.Config(
+        web_app,
+        host="0.0.0.0",
+        port=8080,
+        log_level="info",
+        loop="asyncio"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
 async def main() -> None:
     """
     主程序入口，初始化并启动所有服务
     """
+    global scheduler
+    
     print_logo()
 
     logger.info(f"AutoFilm {settings.APP_VERSION} 启动中...")
@@ -42,8 +65,10 @@ async def main() -> None:
         for server in settings.AlistServerList:
             cron = server.get("cron")
             if cron:
+                # 使用 lambda 延迟初始化，只有在执行时才创建 Alist2Strm 实例
                 scheduler.add_job(
-                    Alist2Strm(**server).run, trigger=CronTrigger.from_crontab(cron)
+                    lambda s=server: asyncio.create_task(Alist2Strm(**s).run()), 
+                    trigger=CronTrigger.from_crontab(cron)
                 )
                 logger.info(f"{server['id']} 已被添加至后台任务")
             else:
@@ -53,8 +78,11 @@ async def main() -> None:
             if after_time != None:
                 if after_time > 0:
                     run_time = datetime.now() + timedelta(seconds=after_time)
+                    # 使用 lambda 延迟初始化，只有在执行时才创建 Alist2Strm 实例
                     scheduler.add_job(
-                        Alist2Strm(**server).run, 'date', run_date=run_time
+                        lambda s=server: asyncio.create_task(Alist2Strm(**s).run()), 
+                        'date', 
+                        run_date=run_time
                     )
                     logger.info(f"{server['id']} 已被添加至 {after_time} 秒后执行")
     else:
@@ -65,8 +93,10 @@ async def main() -> None:
         for server in settings.Ani2AlistList:
             cron = server.get("cron")
             if cron:
+                # 修复 Ani2Alist 的异步执行方式
                 scheduler.add_job(
-                    Ani2Alist(**server).run, trigger=CronTrigger.from_crontab(cron)
+                    lambda s=server: asyncio.create_task(Ani2Alist(**s).run()), 
+                    trigger=CronTrigger.from_crontab(cron)
                 )
                 logger.info(f"{server['id']} 已被添加至后台任务")
             else:
@@ -76,8 +106,11 @@ async def main() -> None:
             if after_time != None:
                 if after_time > 0:
                     run_time = datetime.now() + timedelta(seconds=after_time)
+                    # 修复 Ani2Alist 的异步执行方式
                     scheduler.add_job(
-                        Alist2Strm(**server).run, 'date', run_date=run_time
+                        lambda s=server: asyncio.create_task(Ani2Alist(**s).run()), 
+                        'date', 
+                        run_date=run_time
                     )
                     logger.info(f"{server['id']} 已被添加至 {after_time} 秒后执行")
     else:
@@ -97,10 +130,12 @@ async def main() -> None:
     scheduler.start()
     logger.info("AutoFilm 启动完成")
 
+    # 启动Web服务器作为后台任务
+    web_task = asyncio.create_task(start_web_server())
+
     try:
         # 保持程序运行
-        while True:
-            await asyncio.sleep(1)
+        await asyncio.gather(web_task, asyncio.sleep(float('inf')))
     except (KeyboardInterrupt, SystemExit):
         logger.info("AutoFilm 程序退出！")
         if telegram_bot:
@@ -112,4 +147,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

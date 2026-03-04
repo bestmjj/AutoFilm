@@ -288,3 +288,19 @@ class Ani2Alist:
             }
             """
             handle_recursive(url_dict, entry)
+
+
+async def ani2alist():
+    """
+    执行所有配置的 Ani2Alist 任务
+    """
+    from app.core.config import settings
+
+    for server in settings.Ani2AlistList:
+        server_id = server.get("id", "未命名")
+        try:
+            logger.info(f"开始执行 Ani2Alist {server_id} 任务")
+            await Ani2Alist(**server).run()
+            logger.info(f"Ani2Alist {server_id} 任务完成")
+        except Exception as e:
+            logger.error(f"Ani2Alist {server_id} 任务出错: {str(e)}")

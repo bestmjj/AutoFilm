@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoFilm WebUI</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        .task-editor-textarea {
+            min-height: 400px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.execute {
+            background-color: #28a745;
+        }
+        button.execute:hover {
+            background-color: #218838;
+        }
+        button.edit-btn {
+            background-color: #ffc107;
+            color: #000;
+        }
+        button.edit-btn:hover {
+            background-color: #e0a800;
+        }
+        button.delete-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        button.delete-btn:hover {
+            background-color: #c82333;
+        }
+        button.small {
+            padding: 5px 10px;
+            font-size: 0.9em;
+        }
+        .status-bar {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        
+        /* Task List Styles */
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .task-item {
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .task-info {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .task-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 800px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .modal-header {
+            margin-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .modal-footer {
+            margin-top: 15px;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+            text-align: right;
+        }
+        .log-container {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 4px;
+            height: 300px;
+            overflow-y: scroll;
+            white-space: pre-wrap;
+            font-size: 0.9em;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="login-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#fff;z-index:2000;display:flex;justify-content:center;align-items:center;">
+        <div style="background:#f5f5f5;padding:30px;border-radius:8px;box-shadow:0 4px 10px rgba(0,0,0,0.1);width:300px;">
+             <h2 style="text-align:center;margin-top:0;">Login</h2>
+             <div class="form-group">
+                 <label>Username</label>
+                 <input type="text" id="login-username" style="width:100%;padding:8px;box-sizing:border-box;" value="admin">
+             </div>
+             <div class="form-group">
+                 <label>Password</label>
+                 <input type="password" id="login-password" style="width:100%;padding:8px;box-sizing:border-box;">
+             </div>
+             <button onclick="performLogin()" style="width:100%;">Login</button>
+             <p id="login-error" style="color:red;text-align:center;display:none;"></p>
+        </div>
+    </div>
+    
+    <div id="main-content" style="display:none;">
+    <div class="container">
+        <h1>AutoFilm WebUI <button onclick="performLogout()" style="float:right;background-color:#dc3545;">Logout</button></h1>
+        
+        <div class="section">
+            <h2>System Status</h2>
+            <div id="status" class="status-bar">Loading status...</div>
+        </div>
+
+        <div class="section">
+            <h2>System Logs</h2>
+            <div id="log-container" class="log-container">Loading logs...</div>
+        </div>
+        
+        <div class="section">
+            <h2>Global Controls</h2>
+            <button class="execute" onclick="executeTask('alist2strm', null, this)">Run All Alist2Strm</button>
+            <button class="execute" onclick="executeTask('ani2alist', null, this)">Run All Ani2Alist</button>
+            <button class="execute" onclick="executeTask('all', null, this)">Run All Tasks</button>
+        </div>
+        
+        <div class="section">
+            <h2>Task Management</h2>
+            
+            <div class="task-section">
+                <h3>Alist2Strm Tasks</h3>
+                <div id="alist-task-list" class="task-list">
+                    <!-- Alist2Strm tasks will be rendered here -->
+                </div>
+            </div>
+            
+            <div class="task-section" style="margin-top: 20px;">
+                <h3>Ani2Alist Tasks</h3>
+                <div id="ani-task-list" class="task-list">
+                    <!-- Ani2Alist tasks will be rendered here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Raw Configuration Editor</h2>
+            <textarea id="config-editor" oninput="renderTaskList()">{{ config }}</textarea><br>
+            <button onclick="saveConfig()">Save Configuration</button>
+        </div>
+    </div>
+
+    <!-- Edit Task Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div class="modal-header">
+                <h2 id="modal-title">Edit Task</h2>
+            </div>
+            <div class="modal-body">
+                <p>Edit the configuration for this task below:</p>
+                <textarea id="task-editor" class="task-editor-textarea"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeModal()" style="background-color: #6c757d;">Cancel</button>
+                <button onclick="saveTaskFromModal()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <script>
+        let currentEditType = null;
+        let currentEditIndex = null;
+        
+        async function performLogin() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const errorP = document.getElementById('login-error');
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username, password})
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('auth_token', data.token);
+                    document.getElementById('login-overlay').style.display = 'none';
+                    document.getElementById('main-content').style.display = 'block';
+                    startApp();
+                } else {
+                    errorP.textContent = 'Invalid credentials';
+                    errorP.style.display = 'block';
+                }
+            } catch (e) {
+                errorP.textContent = 'Login error: ' + e.message;
+                errorP.style.display = 'block';
+            }
+        }
+
+        async function performLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    // Call the logout API to clean up session if needed
+                    await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'}
+                    });
+                } catch (e) {
+                    // Even if API fails, we'll still clear the token and redirect to login
+                    console.error('Logout API error:', e);
+                }
+                
+                // Clear the auth token
+                localStorage.removeItem('auth_token');
+                
+                // Show login screen
+                document.getElementById('main-content').style.display = 'none';
+                document.getElementById('login-overlay').style.display = 'flex';
+            }
+        }
+
+        // Override fetch to add token
+        const originalFetch = window.fetch;
+        window.fetch = async function(url, options = {}) {
+            if (url.startsWith('/api/') && !url.includes('/api/login') && !url.includes('/api/logout')) {
+                const token = localStorage.getItem('auth_token');
+                if (token) {
+                    if (!options.headers) options.headers = {};
+                    if (options.headers instanceof Headers) {
+                         options.headers.append('Authorization', `Bearer ${token}`);
+                    } else {
+                         options.headers['Authorization'] = `Bearer ${token}`;
+                    }
+                }
+            }
+            
+            const response = await originalFetch(url, options);
+            
+            if (response.status === 401 && !url.includes('/api/login') && !url.includes('/api/logout')) {
+                localStorage.removeItem('auth_token');
+                document.getElementById('main-content').style.display = 'none';
+                document.getElementById('login-overlay').style.display = 'flex';
+            }
+            return response;
+        };
+
+        function startApp() {
+            renderTaskList();
+            loadStatus();
+            loadLogs();
+            setInterval(loadStatus, 30000);
+            setInterval(loadLogs, 3000);
+        }
+
+        // Initialize on load
+        window.onload = async function() {
+            const token = localStorage.getItem('auth_token');
+            if (token) {
+                try {
+                    const response = await fetch('/api/status');
+                    if (response.ok) {
+                        document.getElementById('login-overlay').style.display = 'none';
+                        document.getElementById('main-content').style.display = 'block';
+                        startApp();
+                    } else {
+                        document.getElementById('login-overlay').style.display = 'flex';
+                    }
+                } catch (e) {
+                     document.getElementById('login-overlay').style.display = 'flex';
+                }
+            } else {
+                document.getElementById('login-overlay').style.display = 'flex';
+            }
+        };
+
+        function getConfigData() {
+            try {
+                return JSON.parse(document.getElementById('config-editor').value);
+            } catch (e) {
+                console.error("Invalid JSON in config editor", e);
+                return null;
+            }
+        }
+
+        function renderTaskList() {
+            const configData = getConfigData();
+            if (!configData) return;
+            
+            // Render Alist2Strm
+            const alistContainer = document.getElementById('alist-task-list');
+            alistContainer.innerHTML = '';
+            if (configData.Alist2StrmList && Array.isArray(configData.Alist2StrmList)) {
+                if (configData.Alist2StrmList.length === 0) {
+                    alistContainer.innerHTML = '<p>No tasks configured.</p>';
+                } else {
+                    configData.Alist2StrmList.forEach((task, index) => {
+                        alistContainer.appendChild(createTaskElement(task, 'alist2strm', index));
+                    });
+                }
+            } else {
+                alistContainer.innerHTML = '<p>No tasks configured.</p>';
+            }
+            
+            // Render Ani2Alist
+            const aniContainer = document.getElementById('ani-task-list');
+            aniContainer.innerHTML = '';
+            if (configData.Ani2AlistList && Array.isArray(configData.Ani2AlistList)) {
+                if (configData.Ani2AlistList.length === 0) {
+                    aniContainer.innerHTML = '<p>No tasks configured.</p>';
+                } else {
+                    configData.Ani2AlistList.forEach((task, index) => {
+                        aniContainer.appendChild(createTaskElement(task, 'ani2alist', index));
+                    });
+                }
+            } else {
+                aniContainer.innerHTML = '<p>No tasks configured.</p>';
+            }
+        }
+
+        function createTaskElement(task, type, index) {
+            const div = document.createElement('div');
+            div.className = 'task-item';
+            
+            const info = document.createElement('div');
+            info.className = 'task-info';
+            info.textContent = task.id || `Unnamed Task ${index + 1}`;
+            
+            const actions = document.createElement('div');
+            actions.className = 'task-actions';
+            
+            const execBtn = document.createElement('button');
+            execBtn.className = 'execute small'; 
+            execBtn.textContent = 'Execute';
+            execBtn.onclick = function() { executeTask(type === 'alist2strm' ? 'specific_alist' : 'specific_ani', task.id, this); };
+            
+            const editBtn = document.createElement('button');
+            editBtn.className = 'edit-btn small';
+            editBtn.textContent = 'Edit';
+            editBtn.onclick = () => openEditModal(type, index);
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn small';
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.onclick = () => deleteTask(type, index);
+            
+            actions.appendChild(execBtn);
+            actions.appendChild(editBtn);
+            actions.appendChild(deleteBtn);
+            
+            div.appendChild(info);
+            div.appendChild(actions);
+            return div;
+        }
+
+        async function deleteTask(type, index) {
+            if (!confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
+                return;
+            }
+            
+            const configData = getConfigData();
+            if (!configData) return;
+            
+            if (type === 'alist2strm') {
+                configData.Alist2StrmList.splice(index, 1);
+            } else {
+                configData.Ani2AlistList.splice(index, 1);
+            }
+            
+            const newConfigStr = JSON.stringify(configData, null, 2);
+            document.getElementById('config-editor').value = newConfigStr;
+            
+            // Save to server
+            await saveConfig();
+            
+            renderTaskList();
+        }
+
+        function openEditModal(type, index) {
+            const configData = getConfigData();
+            if (!configData) return;
+
+            let task;
+            if (type === 'alist2strm') {
+                task = configData.Alist2StrmList[index];
+                document.getElementById('modal-title').textContent = 'Edit Alist2Strm Task';
+            } else {
+                task = configData.Ani2AlistList[index];
+                document.getElementById('modal-title').textContent = 'Edit Ani2Alist Task';
+            }
+
+            if (task) {
+                currentEditType = type;
+                currentEditIndex = index;
+                document.getElementById('task-editor').value = JSON.stringify(task, null, 4);
+                document.getElementById('editModal').style.display = 'block';
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+            currentEditType = null;
+            currentEditIndex = null;
+        }
+
+        async function saveTaskFromModal() {
+            try {
+                const taskJson = document.getElementById('task-editor').value;
+                const taskData = JSON.parse(taskJson);
+                
+                const configData = getConfigData();
+                if (!configData) return;
+                
+                if (currentEditType === 'alist2strm') {
+                    configData.Alist2StrmList[currentEditIndex] = taskData;
+                } else {
+                    configData.Ani2AlistList[currentEditIndex] = taskData;
+                }
+                
+                const newConfigStr = JSON.stringify(configData, null, 2);
+                document.getElementById('config-editor').value = newConfigStr;
+                
+                // Save to server
+                await saveConfig();
+                
+                closeModal();
+                renderTaskList(); // Re-render to show updates
+                
+            } catch (e) {
+                alert("Invalid JSON in task editor: " + e.message);
+            }
+        }
+        
+        async function saveConfig() {
+            const configText = document.getElementById('config-editor').value;
+            
+            try {
+                const configData = JSON.parse(configText);
+                
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({config_data: configData})
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    // Show success message to the user
+                    alert(result.message || 'Configuration saved successfully!');
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail || 'Failed to save configuration');
+                }
+            } catch (e) {
+                alert('Invalid JSON format: ' + e.message);
+            }
+        }
+        
+        async function executeTask(taskType, taskId = null, btnElement = null) {
+            const payload = {task_type: taskType};
+            if (taskId) {
+                payload.task_id = taskId;
+            }
+
+            let originalText = '';
+            if (btnElement) {
+                btnElement.disabled = true;
+                originalText = btnElement.textContent;
+                btnElement.textContent = 'Running...';
+            }
+            
+            try {
+                const response = await fetch('/api/task/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    // Alert is annoying if we have logs, but still good for confirmation
+                    // alert(result.message); 
+                    // Let's just log it to console or show a simpler notification? 
+                    // Keeping alert for now as requested by "unclear if running"
+                    alert(result.message);
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + error.detail || 'Failed to execute task');
+                }
+            } catch (e) {
+                alert('Network error: ' + e.message);
+            } finally {
+                if (btnElement) {
+                    btnElement.disabled = false;
+                    btnElement.textContent = originalText;
+                }
+            }
+        }
+        
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                if (response.ok) {
+                    const data = await response.json();
+                    const logContainer = document.getElementById('log-container');
+                    
+                    // Simple check if user is near bottom to auto-scroll
+                    const isScrolledToBottom = logContainer.scrollHeight - logContainer.clientHeight <= logContainer.scrollTop + 50;
+                    
+                    logContainer.textContent = data.logs;
+                    
+                    if (isScrolledToBottom) {
+                        logContainer.scrollTop = logContainer.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading logs:', error);
+            }
+        }
+        
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                if (response.ok) {
+                    const status = await response.json();
+                    document.getElementById('status').innerHTML = 
+                        `<strong>App:</strong> ${status.app_name} v${status.app_version}<br>
+                         <strong>Scheduled Jobs:</strong> ${status.scheduled_jobs}<br>
+                         <strong>Jobs:</strong> ${status.jobs.map(j => j.name).join(', ') || 'None'}`;
+                } else {
+                    const error = await response.json();
+                    document.getElementById('status').innerHTML = 
+                        `<p class="error-message">Error loading status: ${error.detail || 'Failed to load status'}</p>`;
+                }
+            } catch (error) {
+                console.error('Error loading status:', error);
+                document.getElementById('status').innerHTML = 
+                    `<p class="error-message">JavaScript error loading status: ${error.message}</p>`;
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

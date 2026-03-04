@@ -1,6 +1,7 @@
 from pathlib import Path
 from yaml import safe_load
 from typing import Any
+from datetime import datetime
 
 from app.version import APP_VERSION
 
@@ -83,7 +84,20 @@ class SettingManager:
         if self.DEBUG:
             return self.LOG_DIR / "dev.log"
         else:
-            return self.LOG_DIR / "AutoFilm.log"
+            current_date = datetime.now().strftime("%Y-%m-%d")
+            return self.LOG_DIR / f"{current_date}.log"
+
+    @property
+    def WEB_CONFIG(self) -> dict[str, str]:
+        """
+        Web UI 配置
+        """
+        with self.CONFIG.open(mode="r", encoding="utf-8") as file:
+            settings_config = safe_load(file).get("Settings", {})
+            return {
+                "username": settings_config.get("web_username", "admin"),
+                "password": settings_config.get("web_password", "admin")
+            }
 
     @property
     def AlistServerList(self) -> list[dict[str, Any]]:

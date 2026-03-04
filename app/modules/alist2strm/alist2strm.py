@@ -9,6 +9,7 @@ from app.core import logger
 from app.utils import RequestUtils
 from app.extensions import VIDEO_EXTS, SUBTITLE_EXTS, IMAGE_EXTS, NFO_EXTS
 from app.modules.alist import AlistClient, AlistPath
+from app.core.config import settings
 
 
 class Alist2Strm:
@@ -247,7 +248,18 @@ class Alist2Strm:
                 logger.error(f"删除文件 {file_path} 失败：{e}")
 
 
-
-
-
-
+async def alist2strm():
+    """
+    执行所有配置的 Alist2Strm 任务
+    """
+    from app.core.config import settings
+    
+    for server in settings.AlistServerList:
+        server_id = server.get("id", "未命名")
+        try:
+            logger.info(f"开始执行 Alist2Strm {server_id} 任务")
+            await Alist2Strm(**server).run()
+            logger.info(f"Alist2Strm {server_id} 任务完成")
+        except Exception as e:
+            logger.error(f"Alist2Strm {server_id} 任务出错: {str(e)}")
+            # 继续执行其他任务，而不是直接失败

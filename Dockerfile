@@ -39,4 +39,6 @@ COPY --from=builder /builder/app /app
 RUN apk del gcc python3-dev musl-dev linux-headers && \
     rm -rf /tmp/* 
 
+EXPOSE 8080
+
 ENTRYPOINT ["python", "/app/main.py"]

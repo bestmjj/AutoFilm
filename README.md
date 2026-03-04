@@ -39,12 +39,15 @@
 # 部署方式
 1. Docker 运行
     ```bash
-    docker run -d --name autofilm  -v ./config:/config -v ./media:/media -v ./logs:/logs akimio/autofilm
+    docker run -d --name autofilm -p 8080:8080 -v ./config:/config -v ./media:/media -v ./logs:/logs akimio/autofilm
     ```
+    > 注意：现在增加了 `-p 8080:8080` 端口映射，用于访问Web管理界面
+
 2. Python 环境运行（Python3.12）
     ```bash
     python app/main.py
     ```
+    > 注意：Web管理界面默认运行在 0.0.0.0:8080
 
 # Strm文件优点
 - [x] 轻量化 Emby 服务器，降低 Emby 服务器的性能需求以及硬盘需求
@@ -52,18 +55,24 @@
 - [x] 相比直接访问 Webdav，Emby、Jellyfin 服务器可以提供更好的视频搜索功能以及自带刮削器，以及多设备同步播放进度
 - [x] 提高访问速度，播放速度不受 Emby / Jellyfin 服务器带宽限制（需要使用 [MediaWarp](https://github.com/Akimio521/MediaWarp)）
 
+# Web管理界面
+- [x] 通过Web界面查看和编辑 `config.yaml` 配置文件
+- [x] 通过Web界面立即执行 [Alist2Strm](https://github.com/bestmjj/AutoFilm/blob/master/app/modules/alist2strm/alist2strm.py) 和 [Ani2Alist](https://github.com/bestmjj/AutoFilm/blob/master/app/modules/ani2alist/ani2alist.py) 任务
+- [x] 查看系统状态和计划任务信息
+
 # TODO LIST
 - [x] 从 config 文件中读取配置
 - [x] 优化程序运行效率（异步处理）
 - [x] 增加 Docker 镜像
 - [x] 本地同步网盘
 - [x] Alist 永久令牌
-- [ ] 使用 API 触发任务
+- [x] 使用 Web UI 触发任务
 - [ ] 通知功能
 - [ ] ~~对接 TMDB 实现分类、重命名、刮削等功能~~
     > 已经向 [MoviePilot](https://github.com/jxxghp/MoviePilot) 提交支持对 Alist 服务器文件的操作功能的 PR，目前已经合并进入主线分支，可以直接使用 MoviePilot 直接刮削
 
 # 更新日志
+- 2026.2.1：v1.4.0，增加 WebUI 管理界面，支持在线编辑配置文件、立即执行任务等功能
 - 2025.5.29：v1.3.3，Alist2Strm 模块支持添加删除空目录的功能；提高 Alist V3.45 兼容性；添加 m2ts 视频文件后缀到视频扩展集合；修复视频扩展集合中".wmv"缺失前缀错误
 - 2025.4.4：v1.3.2，添加 .mpg 视频文件后缀；优化重试装饰器；优化重试装饰器；新增遍历文件间隔时间，防止被风控；修正部分方法名、返回变量类型、文档表述错误
 - 2025.3.15：v1.3.1，修复重试装饰器参数类型错误；在 AlistStorage 中添加 model_config 以忽略特定类型避免 Cython 编译后无法使用；修改 AlistClient 中的异常捕获以避免捕获其他异常；使用 Cython 对 Docker 容器内的 py 文件编译，提高性能
@@ -73,7 +82,7 @@
 - 2024.8.26：v1.2.4，完善 URL 中文字符编码问题；提高 Python3.11 兼容性；Alist2Strm 的 mode 选项
 - 2024.7.17：v1.2.2，增加 Ani2Strm 模块
 - 2024.7.8：v1.2.0，修改程序运行逻辑，使用 AsyncIOScheduler 实现后台定时任务
-- 2024.6.3：v1.1.0，使用 alist 官方 api 替代 webdav 实现“扫库”；采用异步并发提高运行效率；配置文件有改动；支持非基础路径 Alist 用户以及无 Webdav 权限用户
+- 2024.6.3：v1.1.0，使用 alist 官方 api 替代 webdav 实现"扫库"；采用异步并发提高运行效率；配置文件有改动；支持非基础路径 Alist 用户以及无 Webdav 权限用户
 - 2024.5.29：v1.0.2，优化运行逻辑；Docker 部署，自动打包 Docker 镜像
 - 2024.2.1：v1.0.0，完全重构 AutoFilm ，不再兼容 v0.1 ；实现多线程，大幅度提升任务处理速度
 - 2024.1.28：v0.1.1，初始版本持续迭代
