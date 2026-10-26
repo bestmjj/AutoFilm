@@ -49,6 +49,35 @@
     ```
     > 注意：Web管理界面默认运行在 0.0.0.0:8080
 
+## OpenList 多层目录自动监控（增量 STRM）
+
+可以在现有 `Alist2StrmList` 中开启定时轮询，无需配置新的组件；支持多个任务、任意层级子目录：
+
+```yaml
+Alist2StrmList:
+  - id: 电视剧
+    url: http://openlist:5244
+    token: YOUR_OPENLIST_TOKEN
+    source_dir: /网盘/电视剧
+    target_dir: /media/电视剧
+    mode: AlistURL
+    flatten_mode: false
+    overwrite: false
+    sync_server: false
+    watch_interval: 300
+    watch_refresh: true
+```
+
+- `watch_interval: 300`：启动后执行首次扫描，此后每隔 300 秒扫描一次；`0`（默认）关闭，最低 60 秒。不是实时文件事件通知。
+- `watch_refresh: true`：扫描时要求 OpenList 刷新目录缓存；远端网盘更新仍受服务商缓存和限速影响。目录很多时应适当增加扫描间隔。
+- 同时支持配置普通 `cron` 或 `after_time` 任务；监控任务与普通任务使用相同源、目标路径时会串行运行。
+- 首次监控会补齐缺失 STRM，之后用文件大小、修改时间、哈希字段等检测变化；状态文件保存在 `/config/watch-state/`，需持久化挂载 `/config`。
+- 对已有且未变化的 STRM 不重复生成；状态丢失时会重建基线并补齐缺失文件。
+- **监控模式仅补建或更新文件，绝不自动删除本地 STRM**。若需要清理已删除视频，请手动运行普通同步任务并自行评估 `sync_server` 的删除风险。
+- 不建议为同一个目标目录配置不同任务，以免普通同步任务把其他任务生成的文件误删。平铺模式下遇到同名视频会记录冲突并跳过冲突项。
+- 保护路径边界，禁止远端路径遍历或通过本地符号链接写出目标目录。
+- 停止/重新配置监控后重启容器才会重新注册周期任务；Web 保存配置不会自动重新加载运行中的调度器。
+
 # Strm文件优点
 - [x] 轻量化 Emby 服务器，降低 Emby 服务器的性能需求以及硬盘需求
 - [x] 运行稳定
