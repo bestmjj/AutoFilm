@@ -74,6 +74,29 @@ async def main() -> None:
             else:
                 logger.warning(f"{server['id']} 未设置 cron")
 
+            watch_interval = server.get("watch_interval", 0)
+            if watch_interval:
+                if not isinstance(watch_interval, int) or isinstance(watch_interval, bool) or watch_interval < 60:
+                    logger.warning(f"{server.get('id', '未命名')} 的 watch_interval 必须是至少 60 秒的整数")
+                else:
+                    async def scan_watch(s=server):
+                        try:
+                            await Alist2Strm(**s).run(watch_mode=True)
+                        except Exception as exc:
+                            logger.error(f"{s.get('id', '未命名')} OpenList 监控扫描失败：{exc}")
+
+                    scheduler.add_job(
+                        scan_watch,
+                        trigger="interval",
+                        seconds=watch_interval,
+                        id=f"openlist-watch-{server.get('id', 'unnamed')}",
+                        replace_existing=True,
+                        max_instances=1,
+                        coalesce=True,
+                        next_run_time=datetime.now(),
+                    )
+                    logger.info(f"{server.get('id', '未命名')} 已启用 OpenList 递归监控，每 {watch_interval} 秒检查")
+
             after_time = server.get("after_time")
             if after_time != None:
                 if after_time > 0:
