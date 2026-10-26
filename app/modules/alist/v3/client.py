@@ -178,7 +178,7 @@ class AlistClient(metaclass=Multiton):
         except Exception:
             raise RuntimeError("获取用户信息失败")
 
-    async def async_api_fs_list(self, dir_path: str) -> list[AlistPath]:
+    async def async_api_fs_list(self, dir_path: str, refresh: bool = False) -> list[AlistPath]:
         """
         获取文件列表
         :param dir_path: 目录路径
@@ -190,7 +190,7 @@ class AlistClient(metaclass=Multiton):
             "password": "",
             "page": 1,
             "per_page": 0,
-            "refresh": False,
+            "refresh": refresh,
         }
         resp = await self.__post(self.url + "/api/fs/list", json=json)
         if resp.status_code != 200:
@@ -205,6 +205,8 @@ class AlistClient(metaclass=Multiton):
         logger.debug(f"获取目录 {dir_path} 的文件列表成功")
         if result["data"]["total"] == 0:
             return []
+        if not isinstance(result["data"].get("content"), list):
+            raise RuntimeError(f"获取目录 {dir_path} 的文件列表返回无效数据")
         return [
             AlistPath(
                 server_url=self.url,
@@ -349,6 +351,7 @@ class AlistClient(metaclass=Multiton):
         wait_time: float | int,
         is_detail: bool = True,
         filter: Callable[[AlistPath, str], bool] = lambda x, y: True,  # 修改签名，接受两个参数
+        refresh: bool = False,
     ) -> AsyncGenerator[AlistPath, None]:
         """
         异步路径列表生成器
@@ -359,7 +362,7 @@ class AlistClient(metaclass=Multiton):
         :param filter: 匿名函数过滤器，接受 AlistPath 和完整路径作为参数
         :return: AlistPath 对象生成器
         """
-        for path in await self.async_api_fs_list(dir_path):
+        for path in await self.async_api_fs_list(dir_path, refresh=refresh):
             await sleep(wait_time)
             full_path = f"{dir_path}/{path.name}" if dir_path != "/" else f"/{path.name}"
             if path.is_dir:
@@ -368,6 +371,7 @@ class AlistClient(metaclass=Multiton):
                     wait_time=wait_time,
                     is_detail=is_detail,
                     filter=filter,
+                    refresh=refresh,
                 ):
                     yield child_path
             if filter(path, full_path):  # 传递完整路径给 filter 函数

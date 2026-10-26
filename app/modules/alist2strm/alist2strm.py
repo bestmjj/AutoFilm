@@ -1,6 +1,9 @@
-from asyncio import to_thread, Semaphore, TaskGroup
+from asyncio import to_thread, Semaphore, TaskGroup, Lock
 from os import PathLike
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from hashlib import sha256
+from json import dumps, loads
+from uuid import uuid4
 from re import compile as re_compile
 
 from aiofile import async_open
@@ -10,6 +13,9 @@ from app.utils import RequestUtils
 from app.extensions import VIDEO_EXTS, SUBTITLE_EXTS, IMAGE_EXTS, NFO_EXTS
 from app.modules.alist import AlistClient, AlistPath
 from app.core.config import settings
+
+
+_RUN_LOCKS: dict[str, Lock] = {}
 
 
 class Alist2Strm:
@@ -35,6 +41,8 @@ class Alist2Strm:
         wait_time: float | int = 0,
         sync_server: bool = False,
         sync_ignore: str | None = None,
+        watch_interval: int = 0,
+        watch_refresh: bool = True,
         **_,
     ) -> None:
         """
@@ -62,8 +70,15 @@ class Alist2Strm:
         self.client = AlistClient(url, username, password, token)
         self.mode = mode
 
-        self.source_dir = source_dir
+        self.source_dir = "/" + source_dir.strip("/") if source_dir.strip("/") else "/"
         self.target_dir = Path(target_dir)
+        self.watch_interval = watch_interval
+        self.watch_refresh = watch_refresh
+        watch_key = f"{id}|{self.client.url}|{self.source_dir}|{self.target_dir.absolute()}"
+        self._watch_lock_key = watch_key
+        self._watch_state_path = settings.CONFIG_DIR / "watch-state" / (
+            sha256(watch_key.encode("utf-8")).hexdigest() + ".json"
+        )
 
         self.flatten_mode = flatten_mode
         if flatten_mode:
@@ -94,118 +109,169 @@ class Alist2Strm:
         else:
             self.sync_ignore_pattern = None
 
-    async def run(self) -> None:
+    def _read_watch_state(self) -> dict[str, dict] | None:
+        """None means no valid baseline exists yet."""
+        try:
+            data = loads(self._watch_state_path.read_text(encoding="utf-8"))
+            if data.get("version") != 1 or not isinstance(data.get("files"), dict):
+                raise ValueError("invalid watch state")
+            return data["files"]
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError, TypeError) as exc:
+            logger.warning(f"监控状态读取失败，将重新建立基线：{exc}")
+            return None
+
+    async def _save_watch_state(self, files: dict[str, dict]) -> None:
+        """Atomically checkpoint a complete successful scan in mounted /config."""
+        state_path = self._watch_state_path
+        await to_thread(state_path.parent.mkdir, parents=True, exist_ok=True)
+        temporary = state_path.with_name(state_path.name + "." + uuid4().hex + ".tmp")
+        try:
+            await to_thread(
+                temporary.write_text,
+                dumps({"version": 1, "files": files}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            await to_thread(temporary.replace, state_path)
+        finally:
+            if temporary.exists():
+                await to_thread(temporary.unlink)
+
+    async def run(self, watch_mode: bool = False) -> None:
         """
-        处理主体
+        Scan the configured root and every nested directory.
+
+        Monitoring writes new/changed files, maintains a persistent baseline,
+        and NEVER performs deletion sync (including during API failures).
         """
+        lock = _RUN_LOCKS.setdefault(self._watch_lock_key, Lock())
+        async with lock:
+            await self._run_once(watch_mode=watch_mode)
+
+    async def _run_once(self, watch_mode: bool = False) -> None:
+        previous_files = self._read_watch_state() if watch_mode else None
+        scanned_files: dict[str, dict] = {}
+        scheduled_count = 0
+        # Flattening or multiple formats can collide at one .strm target.
+        reserved_destinations: dict[Path, str] = {}
+
         def filter(path: AlistPath, full_path: str) -> bool:
-            """
-            过滤器
-            根据 Alist2Strm 配置判断是否需要处理该文件
-            将云盘上上的文件对应的本地文件路径保存至 self.processed_local_paths
-            :param path: AlistPath 对象
-            :param full_path: 完整路径
-            """
-            
-            if path.is_dir:
+            nonlocal scheduled_count
+            if path.is_dir or path.suffix.lower() not in self.process_file_exts:
                 return False
-            if path.suffix.lower() not in self.process_file_exts:
-                logger.debug(f"文件 {path.name} 不在处理列表中")
-                return False
+
             try:
                 local_path = self.__get_local_path(path, full_path)
-            except OSError as e:  # 可能是文件名过长
-                logger.warning(f"获取 {full_path} 本地路径失败：{e}")
+            except (OSError, ValueError) as exc:
+                logger.warning(f"跳过无效的远端路径 {full_path}: {exc}")
                 return False
-            self.full_path = full_path
+
+            other_source = reserved_destinations.setdefault(local_path, full_path)
+            if other_source != full_path:
+                logger.warning(f"STRM 路径冲突：{full_path} 和 {other_source} 均映射到 {local_path}；跳过后者")
+                return False
             self.processed_local_paths.add(local_path)
-            if not self.overwrite and local_path.exists():
-                if path.suffix in self.download_exts:
-                    local_path_stat = local_path.stat()
-                    if local_path_stat.st_mtime < path.modified_timestamp:
-                        logger.debug(
-                            f"文件 {local_path} 已过期，需要重新处理 {full_path}"
-                        )
+
+            changed = False
+            if watch_mode:
+                fingerprint = {
+                    "size": path.size,
+                    "modified": path.modified,
+                    "hashinfo": path.hashinfo,
+                    "hash_info": path.hash_info,
+                    "sign": path.sign,
+                }
+                scanned_files[full_path] = fingerprint
+                changed = previous_files is not None and previous_files.get(full_path) != fingerprint
+
+            if not self.overwrite and local_path.exists() and not changed:
+                if path.suffix.lower() in self.download_exts:
+                    stat = local_path.stat()
+                    if (path.modified and stat.st_mtime < path.modified_timestamp) or stat.st_size < path.size:
+                        scheduled_count += 1
                         return True
-                    if local_path_stat.st_size < path.size:
-                        logger.debug(
-                            f"文件 {local_path} 大小不一致，可能是本地文件损坏，需要重新处理 {full_path}"
-                        )
-                        return True
-                logger.debug(f"文件 {local_path} 已存在，跳过处理 {full_path}")
                 return False
+
+            scheduled_count += 1
             return True
 
-        logger.info(f"开始处理 {self.id}")
-        if self.mode not in ["AlistURL", "RawURL", "AlistPath"]:
-            logger.warning(
-                f"Alist2Strm 的模式 {self.mode} 不存在，已设置为默认模式 AlistURL"
-            )
+        logger.info(f"开始处理 {self.id} (增量监控={watch_mode})")
+        if self.mode not in ("AlistURL", "RawURL", "AlistPath"):
+            logger.warning(f"未知模式 {self.mode}，使用 AlistURL")
             self.mode = "AlistURL"
-        if self.mode == "RawURL":
-            is_detail = True
-        else:
-            is_detail = False
-        self.processed_local_paths = set()  # 云盘文件对应的本地文件路径
-        async with self.__max_workers, TaskGroup() as tg:
+
+        self.processed_local_paths: set[Path] = set()
+        async with TaskGroup() as tg:
             async for path in self.client.iter_path(
                 dir_path=self.source_dir,
                 wait_time=self.wait_time,
-                is_detail=is_detail,
-                filter=filter,  # 传递修改后的 filter 函数
+                is_detail=self.mode == "RawURL",
+                filter=filter,
+                refresh=watch_mode and self.watch_refresh,
             ):
-                tg.create_task(self.__file_processer(path))
-                
-        if self.sync_server:
+                # Each task owns its path; never read a shared mutable field.
+                tg.create_task(self.__file_processer(path, path.full_path))
+
+        # A failed API call or write aborts the TaskGroup and skips checkpoint.
+        if watch_mode:
+            await self._save_watch_state(scanned_files)
+            if self.sync_server:
+                logger.info("监控模式仅补建/更新，不进行本地删除；完整同步请单独执行")
+        elif self.sync_server:
             await self.__cleanup_local_files()
-            logger.info("清理过期的 .strm 文件完成")
-        logger.info(f"{self.id} 处理完成")
-        logger.info("Alist2Strm 处理完成")
 
-    async def __file_processer(self, path: AlistPath) -> None:
-        """
-        异步保存文件至本地
+        logger.info(f"{self.id} 处理完成：处理 {scheduled_count} 个文件")
 
-        :param path: AlistPath 对象
-        """
-        local_path = self.__get_local_path(path, self.full_path)
-        if self.mode == "AlistURL":
-            content = path.download_url
-        elif self.mode == "RawURL":
-            content = path.raw_url
-        elif self.mode == "AlistPath":
-            content = path.path
-        else:
-            raise ValueError(f"AlistStrm 未知的模式 {self.mode}")
+    async def __file_processer(self, path: AlistPath, full_path: str) -> None:
+        """Write a STRM atomically or download an enabled supporting file."""
+        async with self.__max_workers:
+            local_path = self.__get_local_path(path, full_path)
+            if self.mode == "AlistURL":
+                content = path.download_url
+            elif self.mode == "RawURL":
+                content = path.raw_url
+            elif self.mode == "AlistPath":
+                content = path.abs_path
+            else:
+                raise ValueError(f"未知 Strm 模式 {self.mode}")
 
-        await to_thread(local_path.parent.mkdir, parents=True, exist_ok=True)
-
-        logger.debug(f"开始处理 {local_path}")
-        if local_path.suffix == ".strm":
-            async with async_open(local_path, mode="w", encoding="utf-8") as file:
-                await file.write(content)
-            logger.info(f"{local_path} 创建成功")
-        else:
-            async with self.__max_downloaders:
-                await RequestUtils.download(path.download_url, local_path)
+            await to_thread(local_path.parent.mkdir, parents=True, exist_ok=True)
+            if local_path.suffix == ".strm":
+                temporary = local_path.with_name(local_path.name + "." + uuid4().hex + ".tmp")
+                try:
+                    async with async_open(temporary, mode="w", encoding="utf-8") as file:
+                        await file.write(content)
+                    await to_thread(temporary.replace, local_path)
+                finally:
+                    if temporary.exists():
+                        await to_thread(temporary.unlink)
+                logger.info(f"{local_path} 创建/更新成功")
+            else:
+                async with self.__max_downloaders:
+                    await RequestUtils.download(path.download_url, local_path)
                 logger.info(f"{local_path} 下载成功")
 
-    def __get_local_path(self, path: AlistPath, full_path: str = "") -> Path:
-        """
-        根据给定的 AlistPath 对象和当前的配置，计算出本地文件路径。
-        :param path: AlistPath 对象
-        :param full_path: 完整路径
-        :return: 本地文件路径
-        """
+    def __get_local_path(self, path: AlistPath, full_path: str) -> Path:
+        """Resolve a remote file below source_dir without escaping target_dir."""
+        remote = PurePosixPath(full_path)
+        if not full_path.startswith("/") or ".." in remote.parts:
+            raise ValueError("invalid remote absolute path")
+        try:
+            relative = remote.relative_to(PurePosixPath(self.source_dir))
+        except ValueError as exc:
+            raise ValueError("remote path outside configured source directory") from exc
+        if not relative.parts:
+            raise ValueError("remote path cannot be root itself")
         if self.flatten_mode:
-            local_path = self.target_dir / path.name
-        else:
-            relative_path = full_path.replace(self.source_dir, "", 1) if full_path else path.name
-            if relative_path.startswith("/"):
-                relative_path = relative_path[1:]
-            local_path = self.target_dir / relative_path
+            relative = PurePosixPath(path.name)
+            if ".." in relative.parts or len(relative.parts) != 1:
+                raise ValueError("invalid flat file name")
+        local_path = self.target_dir.joinpath(*relative.parts)
         if path.suffix.lower() in VIDEO_EXTS:
             local_path = local_path.with_suffix(".strm")
+        if not local_path.resolve().is_relative_to(self.target_dir.resolve()):
+            raise ValueError("local path escapes output directory")
         return local_path
 
     async def __cleanup_local_files(self) -> None:

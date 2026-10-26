@@ -22,6 +22,8 @@ Alist2StrmList:
     max_workers: 50                   # 最大并发数，减轻对 Alist 服务器的负载（可选，默认 50）
     max_downloaders: 5                # 最大同时下载文件数（可选，默认 5）
     wait_time: 0                      # 遍历请求间隔时间，避免被风控，单位为秒，默认为 0
+    watch_interval: 300               # 可选：每 300 秒递归扫描 OpenList 新增/修改文件；0 为关闭，最短 60 秒
+    watch_refresh: True               # 可选：每轮请求 OpenList 刷新远端目录缓存（请求量可能增加）
 
   - id: 电影
     cron: 0 0 7 * *

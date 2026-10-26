@@ -62,7 +62,7 @@ async def main() -> None:
 
     if settings.AlistServerList:
         logger.info("检测到 Alist2Strm 模块配置，正在添加至后台任务")
-        for server in settings.AlistServerList:
+        for server_index, server in enumerate(settings.AlistServerList):
             cron = server.get("cron")
             if cron:
                 # 使用 lambda 延迟初始化，只有在执行时才创建 Alist2Strm 实例
@@ -71,8 +71,37 @@ async def main() -> None:
                     trigger=CronTrigger.from_crontab(cron)
                 )
                 logger.info(f"{server['id']} 已被添加至后台任务")
-            else:
-                logger.warning(f"{server['id']} 未设置 cron")
+            elif not server.get("watch_interval"):
+                logger.warning(f"{server['id']} 未设置 cron 或 watch_interval")
+
+            watch_interval = server.get("watch_interval", 0)
+            if watch_interval:
+                if not isinstance(watch_interval, int) or isinstance(watch_interval, bool) or watch_interval < 60:
+                    logger.warning(f"{server.get('id', '未命名')} 的 watch_interval 必须是至少 60 秒的整数")
+                else:
+                    async def scan_watch(s=server):
+                        try:
+                            # AlistClient.__init__ performs a blocking HTTP /api/me call.
+                            # Keep that synchronous initialization off the event loop.
+                            worker = await asyncio.to_thread(Alist2Strm, **s)
+                            await worker.run(watch_mode=True)
+                        except Exception as exc:
+                            logger.error(f"{s.get('id', '未命名')} OpenList 监控扫描失败：{exc}")
+
+                    scheduler.add_job(
+                        scan_watch,
+                        trigger="interval",
+                        seconds=watch_interval,
+                        jitter=15,  # Spread repeated scans to reduce concurrent API calls.
+                        id=f"openlist-watch-{server.get('id', 'unnamed')}",
+                        replace_existing=True,
+                        max_instances=1,
+                        coalesce=True,
+                        misfire_grace_time=60,  # 1-second default can skip a healthy scan.
+                        # Spread the initial scan across tasks rather than starting all at once.
+                        next_run_time=datetime.now() + timedelta(seconds=1 + server_index * 3),
+                    )
+                    logger.info(f"{server.get('id', '未命名')} 已启用 OpenList 递归监控，每 {watch_interval} 秒检查")
 
             after_time = server.get("after_time")
             if after_time != None:
